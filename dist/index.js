@@ -20203,7 +20203,7 @@ var sync = (function (exports) {
     };
     firebase$1.initializeApp(firebaseConfig);
     firebase$1.analytics();
-    const timeUrl = 'http://localhost:56758/.well-known/time';
+    const timeUrl = 'https://europe-west3-btv-live-sync-dev.cloudfunctions.net/httpstime';
     let db;
     let globalOffset;
     let sessionID;
@@ -20213,6 +20213,7 @@ var sync = (function (exports) {
     let globalPlayer;
     let globalActiveCue;
     let synced = false;
+    let localSegmentTs;
     let segmentStarts = new Map();
     function ntp(t0, t1, t2, t3) {
         return {
@@ -20225,6 +20226,7 @@ var sync = (function (exports) {
     }
     async function init(player) {
         var _a, _b, _c;
+        await fetch(timeUrl);
         let t0 = Date.now();
         let res = await fetch(timeUrl);
         let t3 = Date.now();
@@ -20271,10 +20273,10 @@ var sync = (function (exports) {
         (_c = document.getElementById("sub")) === null || _c === void 0 ? void 0 : _c.addEventListener("click", sub);
     }
     function add() {
-        globalPlayer.currentTime(globalPlayer.currentTime() + 0.5);
+        globalPlayer.currentTime(globalPlayer.currentTime() + 0.3);
     }
     function sub() {
-        globalPlayer.currentTime(globalPlayer.currentTime() - 0.5);
+        globalPlayer.currentTime(globalPlayer.currentTime() - 0.1);
     }
     async function playerStarted() {
         var _a;
@@ -20303,6 +20305,9 @@ var sync = (function (exports) {
             if (master) {
                 segmentRef.set({ ts: ts, uri: uri, playerPos: globalPlayer.currentTime(), cueStart: activeCue.startTime });
             }
+            else {
+                localSegmentTs = ts;
+            }
             document.getElementById("time").textContent = `${globalPlayer.currentTime()}`;
         });
     }
@@ -20315,18 +20320,25 @@ var sync = (function (exports) {
         let segmentStartOffset = (remoteStart - startTimestamp);
         console.log("Delay: ", signalDelay, " Segment offset: ", segmentStartOffset);
         let localUri = globalActiveCue.value.uri;
-        Number(new RegExp(/_(\d+)\.ts/).exec(val.uri)[1]);
+        let remoteSegNr = Number(new RegExp(/_(\d+)\.ts/).exec(val.uri)[1]);
         let localSegNr = Number(new RegExp(/_(\d+)\.ts/).exec(localUri)[1]);
-        console.log("Segment offset: ", localSegNr);
+        let segmentCountOffset = localSegNr - remoteSegNr;
+        console.log("Segment offset: ", segmentCountOffset);
+        if (segmentCountOffset != 0) {
+            globalPlayer.currentTime(globalPlayer.currentTime() + segmentCountOffset * -6);
+            return;
+        }
         console.log(localUri, val.uri);
         if (localUri == val.uri) {
-            synced = true;
+            console.log("Same URL");
         }
         document.getElementById("time").textContent = `${globalPlayer.currentTime()}`;
         console.log(globalPlayer.currentTime());
-        let gotoTime = val.playerPos - segmentStartOffset;
-        globalPlayer.currentTime(gotoTime);
+        let diffSegmentStart = (localSegmentTs - val.ts) / 1000;
+        console.log("Diff in segment start time:", diffSegmentStart),
+            globalPlayer.currentTime(globalPlayer.currentTime() + diffSegmentStart);
         console.log("Start & End", globalPlayer.liveTracker.seekableEnd(), globalPlayer.liveTracker.seekableStart());
+        synced = true;
     }
     async function setTime() {
         await db.set(Date.now() + globalOffset).then(() => console.log("Wrote timestamp"));
