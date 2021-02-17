@@ -11,3 +11,6 @@ dist/index.js: src/*.ts
 
 dist/index.html: src/index.html
 	cp -v src/index.html dist/index.html
+
+demo: dist/index.js dist/index.html
+	cd dist && python3 -m http.server

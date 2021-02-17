@@ -20,21 +20,8 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 firebase.analytics();
 
-const timeUrl = 'https://europe-west3-btv-live-sync-dev.cloudfunctions.net/httpstime';
-
-let db : firebase.database.Reference;
-
-let globalOffset : number;
-let sessionID : string;
-let master : boolean = false;
-let startTimestamp  : number;
-let remoteStart : number;
-let globalPlayer : videojs.VideoJsPlayer;
-let globalActiveCue: TextTrackCue;
-let synced = false;
-let localSegmentTs : number;
-
-let segmentStarts = new Map();
+const httpTimeHeader = 'x-httpstime'
+const timeSyncRounds = 5
 
 // the NTP algorithm
 // t0 is the client's timestamp of the request packet transmission,
@@ -42,169 +29,211 @@ let segmentStarts = new Map();
 // t2 is the server's timestamp of the response packet transmission and
 // t3 is the client's timestamp of the response packet reception.
 function ntp(t0 : number, t1: number, t2: number, t3: number) {
-    return {
+	return {
 		roundtripdelay: (t3 - t0) - (t2 - t1),
 		offset: ((t1 - t0) + (t2 - t3)) / 2
 	};
 }
 
-function now() : number {
-	return Date.now() + globalOffset
-}
+export class LiveVideoSync {
 
-export async function init(player: videojs.VideoJsPlayer) {
+	synced : boolean = false;
+	master : boolean = false;
+	statusCallback:  (status: string) => void = console.log
 
-	// First fetch in invalid, if we hit a cold endpoint
-	await fetch(timeUrl)
+	db? : firebase.database.Reference;
+	globalOffset : number = 0;
+	sessionID? : string;
+	startTimestamp?  : number;
+	remoteStart? : number;
+	globalPlayer : videojs.VideoJsPlayer;
+	globalActiveCue?: TextTrackCue;
+	localSegmentTs : number = 0;
+	timeServerURL : string;
+	segmentMetadataTrack? : TextTrack;
 
-	let t0 = Date.now()
-	let res = await fetch(timeUrl)
-	let t3 = Date.now()
-	let t2 = Number(res.headers.get("x-httpstime"))
-	console.log(t0, t2, t3)
-	let delta = ntp(t0, t2, t2, t3);
-	console.log(delta)
-	let offset1 = delta.offset
+	constructor(
+		player: videojs.VideoJsPlayer,
+		statusCallback: (status: string) => void,
+		timeserverURL: string,
+	) {
+		this.globalPlayer = player
+		this.timeServerURL = timeserverURL
 
-	t0 = Date.now()
-	res = await fetch(timeUrl);
-	t3 = Date.now()
-	t2 = Number(res.headers.get("x-httpstime"))
-	console.log(t0, t2, t3)
-	delta = ntp(t0, t2, t2, t3);
-	console.log(delta)
-	let offset2 = delta.offset
-
-	t0 = Date.now()
-	res = await fetch(timeUrl);
-	t3 = Date.now()
-	t2 = Number(res.headers.get("x-httpstime"))
-	console.log(t0, t2, t3)
-	delta = ntp(t0, t2, t2, t3);
-	console.log(delta)
-	let offset3 = delta.offset
-
-	globalOffset = (offset1 + offset2 +offset3) / 3
-	console.log("calculated offset: ", globalOffset);
-
-	globalPlayer = player
-	globalPlayer.muted(true) // Can't auto play otherwise
-
-	if (document.location.hash == "") {
-		sessionID = Math.random().toString(36).substring(7);
-		document.location.hash = sessionID
-		master = true
-	} else {
-		sessionID = document.location.hash.substring(1) // Skip '#'
-		let spl = sessionID.split('-')
-		if (spl.length  == 2 && spl[0] == 'master') {
-			sessionID = spl[1]
-			master = true
+		if (statusCallback != null) {
+			this.statusCallback = statusCallback
 		}
 	}
 
-	globalPlayer.play()?.then(playerStarted, console.log)
+	async syncClock() {
+		this.statusCallback("Syncing Clock");
+		// First fetch in invalid, if we hit a cold endpoint
+		await fetch(this.timeServerURL)
 
-	document.getElementById("add")?.addEventListener("click", add);
-	document.getElementById("sub")?.addEventListener("click", sub);
-}
+		let offsetSum = 0;
+		for (let i = 0; i < timeSyncRounds; i++) {
+			let t0 = Date.now()
+			let res = await fetch(this.timeServerURL)
+			let t3 = Date.now()
+			let t2 = Number(res.headers.get(httpTimeHeader))
+			let delta = ntp(t0, t2, t2, t3);
+			console.log(delta)
+			offsetSum += delta.offset
+		}
 
-function add() {
-	globalPlayer.currentTime(globalPlayer.currentTime() + 0.3)
-}
-
-function sub() {
-	globalPlayer.currentTime(globalPlayer.currentTime() - 0.1)
-}
-
-async function playerStarted() {
-	startTimestamp = now()
-	let startTime;
-	let segmentRef = firebase.database().ref(`${sessionID}/segment`)
-
-	if (master) {
-		firebase.database().ref(`${sessionID}/start`).set(startTimestamp)
-		globalPlayer.currentTime(globalPlayer.liveTracker.liveCurrentTime() - 10)
-	} else {
-		startTime = firebase.database().ref(`${sessionID}/start`).get()
-		firebase.database().ref(`${sessionID}/segment`).on('value', handleSyncData)
+		this.globalOffset = offsetSum/timeSyncRounds
+		console.log("calculated time offset: ", this.globalOffset);
+		this.statusCallback("Done syncing clock")
 	}
 
-	let textTracks = globalPlayer.textTracks();
-	let cuesTrack = textTracks[0];
-	remoteStart = (await startTime)?.val()
+	setupSession() {
+		if (document.location.hash == "") {
+			this.sessionID = Math.random().toString(36).substring(7);
+			document.location.hash = this.sessionID
+			this.master = true
+		} else {
+			this.sessionID = document.location.hash.substring(1) // Skip '#'
+			let spl = this.sessionID.split('-')
+			if (spl.length  == 2 && spl[0] == 'master') {
+				this.sessionID = spl[1]
+				this.master = true
+			}
+		}
+	}
 
-	cuesTrack.addEventListener('cuechange', function() {
-		let ts = now()
-		let activeCues = cuesTrack.activeCues!;
+	async start() {
+		await this.syncClock()
+		this.setupSession()
+
+		this.statusCallback("Setting up player")
+		this.globalPlayer.muted(true) // Can't auto play otherwise
+		this.globalPlayer.play()?.then(() => this.playerStarted(), console.log)
+	}
+
+	// Time as synced with the remote server
+	now() : number {
+		return Date.now() + this.globalOffset
+	}
+
+	resetSyncStatus() {
+		this.synced = false
+	}
+
+	async playerStarted() {
+		this.startTimestamp = this.now()
+		this.statusCallback("Setting up player 2")
+
+		let startTime;
+		if (this.master) {
+			// Store synchronized start time in firebase
+			firebase.database().ref(`${this.sessionID}/start`).set(this.startTimestamp)
+
+			// start at T-10 so we are not one the newest segment, otherwise sync can't happen
+			// from time to time due to the other player being on an older playlist
+			this.globalPlayer.currentTime(this.globalPlayer.liveTracker.liveCurrentTime() - 10)
+		} else {
+			// Fetch remote start time
+			startTime = firebase.database().ref(`${this.sessionID}/start`).get()
+
+			// Start listening for segment events on the master
+			firebase.database().ref(`${this.sessionID}/segment`).on('value', (data) => this.handleSyncData(data))
+		}
+
+		let textTracks = this.globalPlayer.textTracks();
+		for (let i = 0; i < textTracks.length; i++) {
+			if (textTracks[i].label === 'segment-metadata') {
+				this.segmentMetadataTrack = textTracks[i];
+			}
+		}
+
+		if (this.segmentMetadataTrack == null) {
+			this.statusCallback("Unable to read segment meta. Aborting!")
+			console.error("Unable to read segmentMetadataTrack. Aborting!")
+			return
+		}
+
+		// Store the time when remote player has started playing
+		this.remoteStart = (await startTime)?.val()
+
+		this.segmentMetadataTrack.addEventListener('cuechange', () => this.handleCueChange());
+
+	}
+
+	handleCueChange() {
+		let ts = this.now()
+		if (!this.master) {
+			this.localSegmentTs = ts
+		}
+
+		if (!this.segmentMetadataTrack) {
+			return
+		}
+
+		let activeCues = this.segmentMetadataTrack!.activeCues!;
 		let activeCue = activeCues[0];
-
 
 		console.log('Cue runs from ' + activeCue.startTime + ' to ' + activeCue.endTime);
 		let uri: string = (activeCue as any).value.uri;
-		globalActiveCue = activeCue
+		this.globalActiveCue = activeCue
 
-		segmentStarts.set(uri, activeCue.startTime)
+		if (this.master) {
+			let segmentRef = firebase.database().ref(`${this.sessionID}/segment`)
+			segmentRef.set({ ts: ts, uri: uri, playerPos: this.globalPlayer.currentTime(), cueStart: activeCue.startTime })
+			this.statusCallback("Publishing segment info")
+		}
+	}
 
-		if (master) {
-			segmentRef.set({ ts: ts, uri: uri, playerPos: globalPlayer.currentTime(), cueStart: activeCue.startTime })
-		} else {
-			localSegmentTs = ts
+	handleSyncData(data : firebase.database.DataSnapshot) {
+		if (this.synced || this.globalActiveCue == null) {
+			return
+		}
+		this.statusCallback('Syncing')
+
+		const val = data.val()
+		let localUri = (this.globalActiveCue as any).value.uri
+
+		let remoteSegNr  = Number(new RegExp(/_(\d+)\.ts/).exec(val.uri)![1]);
+		let localSegNr  = Number(new RegExp(/_(\d+)\.ts/).exec(localUri)![1]);
+
+		let segmentCountOffset = localSegNr - remoteSegNr;
+		console.log('Segment offset: ', segmentCountOffset);
+
+		if (segmentCountOffset != 0) {
+			this.statusCallback("Rough sync")
+			this.globalPlayer.currentTime(this.globalPlayer.currentTime() + segmentCountOffset*-6)
+			return
 		}
 
-		document.getElementById("time")!.textContent = `${globalPlayer.currentTime()}`
-	});
+		this.statusCallback("Fine sync")
 
-}
+		console.log(localUri, val.uri);
 
-function handleSyncData(data : firebase.database.DataSnapshot) {
-	if (synced || globalActiveCue == null) {
-		return
+		if (localUri == val.uri) {
+			console.log("Same URL")
+			//synced = true
+		}
+
+		console.log(this.globalPlayer.currentTime())
+
+
+		// We know we are playing the same segment
+		// Thus we can check what the difference between when we started playing it and when "they" did
+		// There is no real need to account for latency as the times are as absolute as we can be and
+		// we can assume that we both continued playing at a constant rate from then on
+		// Since everything is in ms we need to convert to seconds by dividing
+		// The +0.4 is a static delay that seems to creep in somewhere based on experimentation
+		let diffSegmentStart =  ((this.localSegmentTs - val.ts) / 1000) + 0.4;
+		console.log('Diff in segment start time:', diffSegmentStart),
+
+		this.globalPlayer.currentTime(this.globalPlayer.currentTime() + diffSegmentStart)
+
+		// Don't attempt to sync again unless asked.
+		// If we continuously sync, we just jump around and destroy eventual manual adjustments
+		this.synced = true
+		this.statusCallback("Done!")
 	}
 
-	const val = data.val()
-	let signalDelay = now() - val.ts
-
-	let segmentStartOffset = (remoteStart - startTimestamp)
-
-	console.log("Delay: ", signalDelay, " Segment offset: ", segmentStartOffset)
-	let localUri = (globalActiveCue as any).value.uri
-
-	let remoteSegNr  = Number(new RegExp(/_(\d+)\.ts/).exec(val.uri)![1]);
-	let localSegNr  = Number(new RegExp(/_(\d+)\.ts/).exec(localUri)![1]);
-
-	let segmentCountOffset = localSegNr - remoteSegNr;
-	console.log("Segment offset: ", segmentCountOffset);
-
-	if (segmentCountOffset != 0) {
-		globalPlayer.currentTime(globalPlayer.currentTime() + segmentCountOffset*-6)
-		return
+	nudge(seconds : number) {
+		this.globalPlayer.currentTime(this.globalPlayer.currentTime() + seconds + 0.2)
 	}
-
-	console.log(localUri, val.uri);
-
-	if (localUri == val.uri) {
-		console.log("Same URL")
-		//synced = true
-	}
-
-	document.getElementById("time")!.textContent = `${globalPlayer.currentTime()}`
-	console.log(globalPlayer.currentTime())
-
-	let diffSegmentStart =  (localSegmentTs - val.ts) / 1000;
-	console.log("Diff in segment start time:", diffSegmentStart),
-	globalPlayer.currentTime(globalPlayer.currentTime() + diffSegmentStart)
-
-	//let gotoTime = val.playerPos - segmentStartOffset + signalDelay - 12; //val.cueStart + (6*segmentCountOffset) + segmentStartOffset + (now() - val.ts)/1000.0
-	//globalPlayer.currentTime(gotoTime)
-	console.log("Start & End",
-				globalPlayer.liveTracker.seekableEnd(),
-				globalPlayer.liveTracker.seekableStart(),
-			   )
-
-	synced = true
-}
-
-export async function setTime() {
-	await db.set(Date.now() + globalOffset).then(() => console.log("Wrote timestamp"))
 }

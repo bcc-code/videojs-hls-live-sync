@@ -7,45 +7,40 @@
 	</head>
 
 	<body>
-		<h1>Video.js Example Embed</h1>
+		<h1>Video.js Sync Example</h1>
 
 		<video-js id="player" class="vjs-default-skin" controls preload="auto" width="640" height="268">
-			<source src="https://btvliveproxy.azurewebsites.net/api/TopLevelManifest?playbackUrl=https%3a%2f%2fbrunstadtv.on4cdn.net%2flive%2f46724910%2fbrunstadtv%2fplaylist.m3u8&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYmYiOjE2MTM1MDg0NzYsImV4cCI6MTYxMzUzMDM3NiwiaXNzIjoiaHR0cHM6Ly9icnVuc3RhZC50diIsImF1ZCI6InVybjpicnVuc3RhZHR2In0.RyibvlasckhRAIWnxLA2N7Iq-7VY-NA5VzE6lYkevd4" type="application/x-mpegURL">
+			    <source src="https://cph-msl.akamaized.net/hls/live/2000341/test/master.m3u8" type="application/x-mpegURL">
 		</video-js>
 
-		<div id="time"></div>
+		Current Time: <div id="time"></div><br/>
 
-		<button id="add">+</button>
-		<button id="sub">-</button>
+		<div>
+			<button id="add">+</button>
+			<button id="sub">-</button>
+			<button id="resync">Retry Sync</button>
+		</div>
+
+		<div id="status">
+		</div>
 
 		<script src="https://unpkg.com/video.js/dist/video.js"></script>
 		<script src="https://unpkg.com/@videojs/http-streaming/dist/videojs-http-streaming.js"></script>
 		<script src="./index.js"></script>
 
 		<script>
+			const timeUrl = 'https://europe-west3-btv-live-sync-dev.cloudfunctions.net/httpstime';
 			player = videojs('player');
-			sync.init(player);
-/*
-			let x = () => {
-				let audioTracks = player.audioTracks();
-				let cuesTrack;
+			liveSync = new sync.LiveVideoSync(
+				player,
+				(x) => document.getElementById("status").textContent = x,
+				timeUrl,
+			)
 
-				for (let i = 0; i < audioTracks.length; i++) {
-					  if (textTracks[i].active) {
-						    cuesTrack = audioTracks[i];
-						  }
-				}
-
-				cuesTrack.addEventListener('cuechange', function() {
-					let activeCues = cuesTrack.activeCues;
-					  for (let i = 0; i < activeCues.length; i++) {
-						let activeCue = activeCues[i];
-						    console.log('Cue runs from ' + activeCue.startTime +
-							' to ' + activeCue.endTime);
-						  }
-				});
-			}
-			*/
+			document.getElementById("add").addEventListener("click", () => liveSync.nudge(0.2));
+			document.getElementById("sub").addEventListener("click", () => liveSync.nudge(-0.2));
+			document.getElementById("resync").addEventListener("click", () => liveSync.resync());
+			liveSync.start()
 		</script>
 	</body>
 </html>

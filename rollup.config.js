@@ -19,9 +19,9 @@ export default {
 	],
 	external: [
 		...builtinModules,
-	/*	...(pkg.dependencies == null ? [] : Object.keys(pkg.dependencies)),
+		...(pkg.dependencies == null ? [] : Object.keys(pkg.dependencies)),
 		...(pkg.devDependencies == null ? [] : Object.keys(pkg.devDependencies)),
-		...(pkg.peerDependencies == null ? [] : Object.keys(pkg.peerDependencies))*/
+		...(pkg.peerDependencies == null ? [] : Object.keys(pkg.peerDependencies))
 	]
 };
 
