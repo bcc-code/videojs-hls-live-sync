@@ -4,21 +4,6 @@ import 'firebase/analytics';
 import 'firebase/database';
 import '@types/video.js'
 
-const firebaseConfig = {
-	apiKey: 'AIzaSyCdS5jYDWSQhydHorldI3Gmz0RXQuA1aM4',
-	authDomain: 'btv-live-sync-dev.firebaseapp.com',
-	databaseURL: 'https://btv-live-sync-dev-default-rtdb.europe-west1.firebasedatabase.app',
-	projectId: 'btv-live-sync-dev',
-	storageBucket: 'btv-live-sync-dev.appspot.com',
-	messagingSenderId: '196561865340',
-	appId: '1:196561865340:web:ec879d1b082856c60b57f9',
-	measurementId: 'G-C1EGY1D8J8'
-
-};
-
-// Initialize Firebase
-firebase.initializeApp(firebaseConfig);
-firebase.analytics();
 
 const httpTimeHeader = 'x-httpstime'
 const timeSyncRounds = 5
@@ -56,6 +41,7 @@ export class LiveVideoSync {
 		player: videojs.VideoJsPlayer,
 		statusCallback: (status: string) => void,
 		timeserverURL: string,
+		firebaseConfig: any,
 	) {
 		this.globalPlayer = player
 		this.timeServerURL = timeserverURL
@@ -63,6 +49,11 @@ export class LiveVideoSync {
 		if (statusCallback != null) {
 			this.statusCallback = statusCallback
 		}
+
+		// Initialize Firebase
+		firebase.initializeApp(firebaseConfig);
+		firebase.analytics();
+
 	}
 
 	async syncClock() {

@@ -2,3 +2,4 @@ src
 Makefile
 rollup.config.js
 tsconfig.json
+dist/index.html

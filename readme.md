@@ -14,10 +14,14 @@ The system also performs the sync 6 times. The first result is ignored as there 
 delays that are not present in later requests (cold functions, routing etc), and 
 then computes the average of the next 5 results.
 
+
+In addition you will need a Firebase project with enabled RealTime Database.
+
 ## Usage
 
 An example page playing a dummy live stream is available at [./src/index.html](./src/index.html).
-You can easily run in using `npm install && make demo` and visiting http://localhost:8000/
+You should modify that file to include your firebase config.
+Then you can easily run it using `npm install && make demo` and visiting http://localhost:8000/
 It requires you to have `python3` installed as it is used as a dummy web server.
 
 When you open the page, the URL will be updated with a session code in the hash,

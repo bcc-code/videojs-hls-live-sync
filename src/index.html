@@ -29,12 +29,15 @@
 		<script src="./index.js"></script>
 
 		<script>
+			const firebaseConfig = {"replace": "me!"};
+
 			const timeUrl = 'https://europe-west3-btv-live-sync-dev.cloudfunctions.net/httpstime';
 			player = videojs('player');
 			liveSync = new sync.LiveVideoSync(
 				player,
 				(x) => document.getElementById("status").textContent = x,
 				timeUrl,
+				firebaseConfig,
 			)
 
 			document.getElementById("add").addEventListener("click", () => liveSync.nudge(0.2));
