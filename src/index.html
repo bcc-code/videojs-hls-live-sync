@@ -31,6 +31,8 @@
 		<script>
 			const firebaseConfig = {"replace": "me!"};
 
+			// Note that this server is not guaranteed to exist. Please provide
+			// your own if you have problems.
 			const timeUrl = 'https://europe-west3-btv-live-sync-dev.cloudfunctions.net/httpstime';
 			player = videojs('player');
 			liveSync = new sync.LiveVideoSync(

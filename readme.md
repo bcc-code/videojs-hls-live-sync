@@ -10,10 +10,20 @@ language in the same room on different speakers.
 
 You will need a [HTTPsTime Server](https://web.archive.org/web/20210103104032/http://phk.freebsd.dk/time/20151129/) that provides the `X-HTTPSTIME` header, in order to get sufficient accuracy.
 
+Here is a naive Go handler for such a server:
+
+```golang
+func timeHandler(w http.ResponseWriter, req *http.Request) {
+	w.Header().Add("X-HTTPSTIME", fmt.Sprintf("%d", time.Now().UnixNano()/int64(time.Millisecond)))
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	w.Header().Add("Access-Control-Expose-Headers", "X-HTTPSTIME")
+	w.Write([]byte{})
+}
+```
+
 The system also performs the sync 6 times. The first result is ignored as there are often
 delays that are not present in later requests (cold functions, routing etc), and 
 then computes the average of the next 5 results.
-
 
 In addition you will need a Firebase project with enabled RealTime Database.
 
@@ -76,6 +86,7 @@ document.getElementById("resync").addEventListener("click", () => liveSync.resyn
 * Inspiration: https://github.com/webtiming/timingsrc
 * NTP code, inspiration: https://stackoverflow.com/questions/1638337/the-best-way-to-synchronize-client-side-javascript-clock-with-server-date
 
+### Footnotes
 
 <a name="fn-1">1</a>: Sometimes +- 0.5 sec but usually a lot closer.
  
