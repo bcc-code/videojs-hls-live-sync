@@ -4,7 +4,6 @@ import 'firebase/analytics';
 import 'firebase/database';
 import '@types/video.js'
 
-
 const httpTimeHeader = 'x-httpstime'
 const timeSyncRounds = 5
 
