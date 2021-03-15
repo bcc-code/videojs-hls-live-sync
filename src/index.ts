@@ -4,7 +4,6 @@ import 'firebase/analytics';
 import 'firebase/database';
 import '@types/video.js'
 
-
 const httpTimeHeader = 'x-httpstime'
 const timeSyncRounds = 5
 
@@ -36,6 +35,8 @@ export class LiveVideoSync {
 	localSegmentTs : number = 0;
 	timeServerURL : string;
 	segmentMetadataTrack? : TextTrack;
+	manualSyncDone : boolean = false;
+	lockedDelta : number = 9999999;
 
 	constructor(
 		player: videojs.VideoJsPlayer,
@@ -110,6 +111,10 @@ export class LiveVideoSync {
 		this.synced = false
 	}
 
+	lockManualSync() {
+		this.manualSyncDone = true;
+	}
+
 	async playerStarted() {
 		this.startTimestamp = this.now()
 		this.statusCallback("Setting up player 2")
@@ -175,9 +180,10 @@ export class LiveVideoSync {
 	}
 
 	handleSyncData(data : firebase.database.DataSnapshot) {
-		if (this.synced || this.globalActiveCue == null) {
+		if ((this.synced && !this.manualSyncDone) || this.globalActiveCue == null) {
 			return
 		}
+
 		this.statusCallback('Syncing')
 
 		const val = data.val()
@@ -189,9 +195,18 @@ export class LiveVideoSync {
 		let segmentCountOffset = localSegNr - remoteSegNr;
 		console.log('Segment offset: ', segmentCountOffset);
 
+		if (segmentCountOffset != 0 && this.manualSyncDone) {
+			return
+		}
+
 		if (segmentCountOffset != 0) {
 			this.statusCallback("Rough sync")
 			this.globalPlayer.currentTime(this.globalPlayer.currentTime() + segmentCountOffset*-6)
+
+			if (this.globalPlayer.playbackRate() != 1.0) {
+				this.globalPlayer.playbackRate(1.0);
+			}
+
 			return
 		}
 
@@ -201,7 +216,6 @@ export class LiveVideoSync {
 
 		if (localUri == val.uri) {
 			console.log("Same URL")
-			//synced = true
 		}
 
 		console.log(this.globalPlayer.currentTime())
@@ -212,9 +226,31 @@ export class LiveVideoSync {
 		// There is no real need to account for latency as the times are as absolute as we can be and
 		// we can assume that we both continued playing at a constant rate from then on
 		// Since everything is in ms we need to convert to seconds by dividing
-		// The +0.4 is a static delay that seems to creep in somewhere based on experimentation
-		let diffSegmentStart =  ((this.localSegmentTs - val.ts) / 1000) + 0.4;
-		console.log('Diff in segment start time:', diffSegmentStart),
+		let diffSegmentStart =  ((this.localSegmentTs - val.ts) / 1000);
+
+		console.log('Diff in segment start time:', diffSegmentStart);
+		if (this.manualSyncDone) {
+			if (this.lockedDelta > 10) {
+				this.lockedDelta = diffSegmentStart;
+				return
+			}
+
+			let totalDelta = diffSegmentStart - this.lockedDelta;
+			console.log("Total delta ", totalDelta);
+
+			let speedOffset = totalDelta/6000;
+			let playbackRate = 1.0-speedOffset;
+
+			if (Math.abs(speedOffset) > 0.01) {
+				this.globalPlayer.playbackRate(playbackRate)
+				this.statusCallback(`Playback rate: ${playbackRate}`)
+			} else if (this.globalPlayer.playbackRate() != 1.0) {
+				this.globalPlayer.playbackRate(1.0);
+			}
+			return
+		}
+
+		//let diffSegmentStart += 0.3;
 
 		this.globalPlayer.currentTime(this.globalPlayer.currentTime() + diffSegmentStart)
 
@@ -225,6 +261,7 @@ export class LiveVideoSync {
 	}
 
 	nudge(seconds : number) {
+		this.globalOffset += seconds;
 		this.globalPlayer.currentTime(this.globalPlayer.currentTime() + seconds + 0.2)
 	}
 }

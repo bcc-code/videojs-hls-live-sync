@@ -19,6 +19,7 @@
 			<button id="add">+</button>
 			<button id="sub">-</button>
 			<button id="resync">Retry Sync</button>
+			<button id="lock">Done Manual Sync</button>
 		</div>
 
 		<div id="status">
@@ -26,14 +27,14 @@
 
 		<script src="https://unpkg.com/video.js/dist/video.js"></script>
 		<script src="https://unpkg.com/@videojs/http-streaming/dist/videojs-http-streaming.js"></script>
-		<script src="./index.js"></script>
+		<script src="./iife.index.js"></script>
 
 		<script>
 			const firebaseConfig = {"replace": "me!"};
 
 			// Note that this server is not guaranteed to exist. Please provide
 			// your own if you have problems.
-			const timeUrl = 'https://europe-west3-btv-live-sync-dev.cloudfunctions.net/httpstime';
+			const timeUrl = 'http://localhost:8090/.well-known/time';
 			player = videojs('player');
 			liveSync = new sync.LiveVideoSync(
 				player,
@@ -45,6 +46,7 @@
 			document.getElementById("add").addEventListener("click", () => liveSync.nudge(0.2));
 			document.getElementById("sub").addEventListener("click", () => liveSync.nudge(-0.2));
 			document.getElementById("resync").addEventListener("click", () => liveSync.resync());
+			document.getElementById("lock").addEventListener("click", () => liveSync.lockManualSync());
 			liveSync.start()
 		</script>
 	</body>

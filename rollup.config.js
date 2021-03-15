@@ -2,13 +2,20 @@ import ts from "@wessberg/rollup-plugin-ts";
 import { nodeResolve } from '@rollup/plugin-node-resolve';
 import pkg from "./package.json";
 import {builtinModules} from "module";
-console.log(pkg);
+import { terser } from "rollup-plugin-terser";
+
 export default {
 	input: "src/index.ts",
 	output: [
 		{
-			file: pkg.main,
+			file: pkg.browser,
 			format: "iife",
+			sourcemap: true,
+			name: "sync",
+		},
+		{
+			file: pkg.main,
+			format: "cjs",
 			sourcemap: true,
 			name: "sync",
 		},
@@ -16,6 +23,7 @@ export default {
 	plugins: [
 		ts(),
 		nodeResolve(),
+		terser(),
 	],
 	external: [
 		...builtinModules,
