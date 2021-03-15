@@ -1,6 +1,6 @@
 {
   "name": "videojs-hls-live-sync",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "description": "Allows sync of multiple VideoJS players accross multiple browsers to syncronize playback with an offset of < 0.1 sec",
   "main": "dist/index.js",
   "browser": "dist/iife.index.js",
