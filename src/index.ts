@@ -19,6 +19,19 @@ function ntp(t0 : number, t1: number, t2: number, t3: number) {
 	};
 }
 
+// Polyfill for performance.now() as Safari on iOS doesn't have it...
+(function(){
+    	if ("performance" in window === false) {
+        	window.performance = {};
+        	window.performance.timeOrigin = new Date().getTime();
+    	}
+    	if ("now" in window.performance === false){
+      		window.performance.now = function now(){
+        		return new Date().getTime() - window.performance.timeOrigin;
+      		};
+    	}
+})();
+
 export class LiveVideoSync {
 
 	synced : boolean = false;
@@ -64,9 +77,9 @@ export class LiveVideoSync {
 
 		let offsetSum = 0;
 		for (let i = 0; i < timeSyncRounds; i++) {
-			let t0 = Date.now()
+			let t0 = performance.timeOrigin + performance.now()
 			let res = await fetch(this.timeServerURL)
-			let t3 = Date.now()
+			let t3 = performance.timeOrigin + performance.now()
 			let t2 = Number(res.headers.get(httpTimeHeader))
 			let delta = ntp(t0, t2, t2, t3);
 			console.log(delta)
@@ -104,7 +117,7 @@ export class LiveVideoSync {
 
 	// Time as synced with the remote server
 	now() : number {
-		return Date.now() + this.globalOffset
+		return performance.timeOrigin + performance.now() + this.globalOffset
 	}
 
 	resetSyncStatus() {
@@ -189,8 +202,8 @@ export class LiveVideoSync {
 		const val = data.val()
 		let localUri = (this.globalActiveCue as any).value.uri
 
-		let remoteSegNr  = Number(new RegExp(/_(\d+)\.ts/).exec(val.uri)![1]);
-		let localSegNr  = Number(new RegExp(/_(\d+)\.ts/).exec(localUri)![1]);
+		let remoteSegNr = Number(new RegExp(/_(\d+)\.(ts|mp4)/).exec(val.uri)![1]);
+		let localSegNr  = Number(new RegExp(/_(\d+)\.(ts|mp4)/).exec(localUri)![1]);
 
 		let segmentCountOffset = localSegNr - remoteSegNr;
 		console.log('Segment offset: ', segmentCountOffset);
