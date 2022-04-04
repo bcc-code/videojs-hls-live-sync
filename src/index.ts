@@ -70,18 +70,31 @@ export class LiveVideoSync {
 
 	}
 
+	getNetworkTime() {
+		return new Promise((res,rej)=>{
+			let xhr = new XMLHttpRequest(), clientSent, clientReceived = 0;
+		
+			xhr.open('GET', "https://1.1.1.1/cdn-cgi/trace"); // This is an cloudflare api endpoint available on any cloudflare host
+			xhr.onreadystatechange = function(){
+				if(xhr.readyState > 1 && !clientReceived) { // HEADERS RECEIVED state, This means we received the response
+					clientReceived = performance.now();
+				} else if(xhr.readyState == 4 && this.status == 200) { //
+                    let serverTime = Number(xhr.responseText.split("\nts=")[1].split("\n",1)[0])*1000;
+                    res([clientSent + performance.timeOrigin, serverTime, clientReceived + performance.timeOrigin]);
+                } else if(xhr.readyState == 4) rej();
+			};
+			clientSent = performance.now();
+			xhr.send(null);
+		});
+	}
+
 	async syncClock() {
 		this.statusCallback("Syncing Clock");
-		// First fetch in invalid, if we hit a cold endpoint
-		await fetch(this.timeServerURL)
 
 		let offsetSum = 0;
 		for (let i = 0; i < timeSyncRounds; i++) {
-			let t0 = performance.timeOrigin + performance.now()
-			let res = await fetch(this.timeServerURL)
-			let t3 = performance.timeOrigin + performance.now()
-			let t2 = Number(res.headers.get(httpTimeHeader))
-			let delta = ntp(t0, t2, t2, t3);
+			let t = await this.getNetworkTime();
+			let delta = ntp(t[0], t[1], t[1], t[2]);
 			console.log(delta)
 			offsetSum += delta.offset
 		}
