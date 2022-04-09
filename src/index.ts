@@ -4,7 +4,6 @@ import 'firebase/analytics';
 import 'firebase/database';
 import '@types/video.js'
 
-const httpTimeHeader = 'x-httpstime'
 const timeSyncRounds = 5
 
 // the NTP algorithm
@@ -21,15 +20,14 @@ function ntp(t0 : number, t1: number, t2: number, t3: number) {
 
 // Polyfill for performance.now() as Safari on iOS doesn't have it...
 (function(){
-    	if ("performance" in window === false) {
-        	window.performance = {};
-        	window.performance.timeOrigin = new Date().getTime();
-    	}
-    	if ("now" in window.performance === false){
-      		window.performance.now = function now(){
-        		return new Date().getTime() - window.performance.timeOrigin;
-      		};
-    	}
+	if ("performance" in window === false) {
+		console.error("Browser not supported")
+	}
+	if ("now" in window.performance === false){
+		window.performance.now = function now(){
+			return new Date().getTime() - window.performance.timeOrigin;
+		};
+	}
 })();
 
 export class LiveVideoSync {
@@ -70,18 +68,19 @@ export class LiveVideoSync {
 
 	}
 
-	getNetworkTime() {
+	getNetworkTime() : Promise<Array<number>> {
 		return new Promise((res,rej)=>{
-			let xhr = new XMLHttpRequest(), clientSent, clientReceived = 0;
-		
+			let xhr = new XMLHttpRequest()
+			let  clientSent : number, clientReceived = 0;
+
 			xhr.open('GET', "https://1.1.1.1/cdn-cgi/trace"); // This is an cloudflare api endpoint available on any cloudflare host
 			xhr.onreadystatechange = function(){
 				if(xhr.readyState > 1 && !clientReceived) { // HEADERS RECEIVED state, This means we received the response
 					clientReceived = performance.now();
 				} else if(xhr.readyState == 4 && this.status == 200) { //
-                    let serverTime = Number(xhr.responseText.split("\nts=")[1].split("\n",1)[0])*1000;
-                    res([clientSent + performance.timeOrigin, serverTime, clientReceived + performance.timeOrigin]);
-                } else if(xhr.readyState == 4) rej();
+					let serverTime = Number(xhr.responseText.split("\nts=")[1].split("\n",1)[0])*1000;
+					res([clientSent + performance.timeOrigin, serverTime, clientReceived + performance.timeOrigin]);
+				} else if(xhr.readyState == 4) rej();
 			};
 			clientSent = performance.now();
 			xhr.send(null);
