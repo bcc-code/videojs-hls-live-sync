@@ -1,3 +1,7 @@
+# STATUS
+
+This project is no longer maineined or in use. Feel free to contact one of the comitters if you would like to take over the maintenance.
+
 # video-hls-live-sync
 
 This package attempts to synchronize playback of hls (others not tested) based
